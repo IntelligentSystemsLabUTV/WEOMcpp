@@ -1699,48 +1699,17 @@ ValueResult<DeviceType> PropertiesWtc640::testDeviceType(const ConnectionExclusi
 {
     using ResultType = ValueResult<DeviceType>;
 
-    std::optional<bool> isLoader;
+    const auto deviceIdResult = transaction.readData<uint8_t>(
+        MemorySpaceWtc640::DEVICE_IDENTIFICATOR.getFirstAddress(),
+        MemorySpaceWtc640::DEVICE_IDENTIFICATOR.getSize());
+    if (!deviceIdResult.isOk())
     {
-        static const std::vector<uint8_t> LOADER_ID {0x57, 0x06, 0x4C};
-        static const std::vector<uint8_t> MAIN_ID   {0x57, 0x06, 0x4D};
-        static const uint8_t CURRENT_VERSION = 0x06;
-
-        const auto deviceIdResult = transaction.readData<uint8_t>(MemorySpaceWtc640::DEVICE_IDENTIFICATOR.getFirstAddress(), MemorySpaceWtc640::DEVICE_IDENTIFICATOR.getSize());
-        if (!deviceIdResult.isOk())
-        {
-            return ResultType::createFromError(deviceIdResult);
-        }
-        assert(deviceIdResult.getValue().size() == 4);
-
-        auto getDeviceIdAsString = [&]()
-        {
-            std::vector<std::string> list;
-            for (const auto value : deviceIdResult.getValue())
-            {
-                list.push_back(utils::numberToHex(value, true));
-            }
-
-            return utils::joinStringVector(list, " ");
-        };
-
-        const std::ranges::take_view deviceId{deviceIdResult.getValue(), 3};
-        if (std::ranges::equal(deviceId, LOADER_ID))
-        {
-            isLoader = true;
-        }
-        else if (std::ranges::equal(deviceId, MAIN_ID))
-        {
-            isLoader = false;
-        }
-        else
-        {
-            return ResultType::createError("Unknown device type!", utils::format("id: [{}]", getDeviceIdAsString()));
-        }
-
-        if (deviceIdResult.getValue().back() != CURRENT_VERSION)
-        {
-            return ResultType::createError("Unsupported firmware version!", utils::format("id: [{}]", getDeviceIdAsString()));
-        }
+        return ResultType::createFromError(deviceIdResult);
+    }
+    const auto identifiedType = DevicesWtc640::fromDeviceIdentifier(deviceIdResult.getValue());
+    if (!identifiedType.isOk())
+    {
+        return identifiedType;
     }
 
     const auto statusResult = transaction.readData<uint32_t>(MemorySpaceWtc640::STATUS.getFirstAddress(), 1);

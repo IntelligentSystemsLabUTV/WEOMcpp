@@ -1,0 +1,27 @@
+# Recreate imported dependency targets before loading the exported SDK targets.
+include(CMakeFindDependencyMacro)
+find_dependency(Boost COMPONENTS log log_setup thread filesystem system json)
+find_dependency(TBB)
+find_dependency(OpenSSL)
+
+if(@W_BUILD_DEPENDENCIES_WITH_CONAN@)
+    find_dependency(ffmpeg)
+    find_dependency(libzip CONFIG)
+    if((UNIX OR APPLE) AND NOT CMAKE_CROSSCOMPILING)
+        find_dependency(libusb)
+    endif()
+else()
+    find_dependency(PkgConfig)
+    pkg_check_modules(libav REQUIRED IMPORTED_TARGET GLOBAL
+        libavdevice libavfilter libavformat libavcodec
+        libswresample libswscale libavutil)
+    pkg_check_modules(libzip REQUIRED IMPORTED_TARGET GLOBAL libzip)
+    if((UNIX OR APPLE) AND NOT CMAKE_CROSSCOMPILING)
+        pkg_check_modules(LIBUSB REQUIRED IMPORTED_TARGET GLOBAL libusb-1.0)
+    endif()
+endif()
+
+if((UNIX OR APPLE) AND NOT CMAKE_CROSSCOMPILING)
+    find_dependency(PkgConfig)
+    pkg_check_modules(LIBUDEV REQUIRED IMPORTED_TARGET GLOBAL libudev)
+endif()

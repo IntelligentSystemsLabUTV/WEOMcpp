@@ -53,7 +53,7 @@ if (W_BUILD_DEPENDENCIES_WITH_CONAN)
     )
 else ()
     find_package(PkgConfig REQUIRED)
-    pkg_check_modules(libzip REQUIRED IMPORTED_TARGET libzip)
+    pkg_check_modules(libzip REQUIRED IMPORTED_TARGET GLOBAL libzip)
     target_link_libraries(WTC640 PRIVATE PkgConfig::libzip)
 endif()
 
@@ -65,6 +65,8 @@ else ()
 endif ()
 
 
-target_include_directories(WTC640 PUBLIC include)
+target_include_directories(WTC640 PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
 
 add_library(ThermalCore::WTC640 ALIAS WTC640)

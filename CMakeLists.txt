@@ -7,7 +7,12 @@ option(W_BUILD_DEPENDENCIES_WITH_CONAN "Build dependencies using conan" OFF)
 option(W_BUILD_EXAMPLE "Build example" OFF)
 option(W_BUILD_TEST "Build test" OFF)
 
-project(ThermalCore LANGUAGES CXX)
+project(weomcpp VERSION 0.1.0 LANGUAGES CXX)
+
+option(W_BUILD_WITH_AMENT "Build and export the SDK as an ament package" ON)
+if(W_BUILD_WITH_AMENT)
+    find_package(ament_cmake REQUIRED)
+endif()
 
 if(W_BUILD_DEPENDENCIES_WITH_CONAN)
     include(conan.cmake)
@@ -44,4 +49,17 @@ endif()
 
 if(W_BUILD_TEST)
     add_subdirectory(tests)
+endif()
+
+install(TARGETS Core WTC640
+    EXPORT export_weomcpp
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin)
+install(DIRECTORY core/include/ wtc640/include/ DESTINATION include)
+install(FILES LICENSE DESTINATION share/${PROJECT_NAME})
+
+if(W_BUILD_WITH_AMENT)
+    ament_export_targets(export_weomcpp HAS_LIBRARY_TARGET NAMESPACE ThermalCore::)
+    ament_package(CONFIG_EXTRAS cmake/weomcpp-dependencies.cmake.in)
 endif()

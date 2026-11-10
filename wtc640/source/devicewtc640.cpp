@@ -9,6 +9,24 @@ namespace core
 const DeviceType DevicesWtc640::MAIN_USER = DeviceType::createDeviceType();
 const DeviceType DevicesWtc640::LOADER = DeviceType::createDeviceType();
 
+ValueResult<DeviceType> DevicesWtc640::fromDeviceIdentifier(std::span<const uint8_t> identifier)
+{
+    using ResultType = ValueResult<DeviceType>;
+    if (identifier.size() != 4 || identifier[0] != 0x57 || identifier[1] != 0x06 ||
+        (identifier[2] != 0x4D && identifier[2] != 0x4C))
+    {
+        return ResultType::createError("Unknown device type!", "Invalid WEOM device identifier");
+    }
+    // Device identification revisions supported by this fork. Revision 0x09 is
+    // used by newer WEOM USB cameras; retain the original 0x06 compatibility.
+    if (identifier[3] != 0x06 && identifier[3] != 0x09)
+    {
+        return ResultType::createError("Unsupported firmware version!",
+            utils::format("WEOM device identification revision: {}", static_cast<unsigned>(identifier[3])));
+    }
+    return identifier[2] == 0x4D ? MAIN_USER : LOADER;
+}
+
 core::Size DevicesWtc640::getSizeInPixels(DeviceType deviceType)
 {
     if (deviceType == MAIN_USER)
