@@ -46,9 +46,14 @@ private:
 private:
     size_t m_internalId {0};
 
-    static std::vector<PropertyId> m_allPropertyIds;
-    static std::vector<PropertyData> m_allPropertyData;
-    static std::unordered_map<std::string, size_t> m_idStringToInternalId;
+    struct Registry
+    {
+        std::vector<PropertyId> allPropertyIds;
+        std::vector<PropertyData> allPropertyData;
+        std::unordered_map<std::string, size_t> idStringToInternalId;
+    };
+
+    static Registry& getRegistry();
 };
 
 } // namespace core

@@ -12,6 +12,7 @@
 #include <set>
 #include <array>
 #include <optional>
+#include <span>
 
 
 namespace core
@@ -29,6 +30,7 @@ public:
     static constexpr unsigned HEIGHT = 480;
 
     static core::Size getSizeInPixels(DeviceType deviceType);
+    static ValueResult<DeviceType> fromDeviceIdentifier(std::span<const uint8_t> identifier);
 };
 
 class LoginRole

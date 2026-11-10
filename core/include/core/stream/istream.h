@@ -3,6 +3,7 @@
 
 #include "core/stream/imagedata.h"
 #include "core/misc/result.h"
+#include <chrono>
 
 namespace core
 {
@@ -31,6 +32,11 @@ public:
     [[nodiscard]] virtual bool isRunning() const = 0;
 
     [[nodiscard]] virtual VoidResult readImageData(ImageData& imageData) = 0;
+
+    // Configure before startStream. Implemented by the USB/UART stream.
+    virtual void setTimeouts(std::chrono::milliseconds, std::chrono::milliseconds) {}
+    // May be called from another thread to interrupt opening or reading a stream.
+    virtual void requestStop() {}
 
     static constexpr uint16_t WIDTH_INPUT_STREAM = 640;
     static constexpr uint16_t HEIGHT_INPUT_STREAM = 480;

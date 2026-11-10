@@ -143,8 +143,8 @@ add_library(Core STATIC
 if(UNIX OR APPLE)
     if(NOT CMAKE_CROSSCOMPILING)
         find_package(PkgConfig REQUIRED)
-		pkg_check_modules(LIBUDEV REQUIRED libudev)
-		target_link_libraries(Core PRIVATE ${LIBUDEV_LIBRARIES})
+		pkg_check_modules(LIBUDEV REQUIRED IMPORTED_TARGET GLOBAL libudev)
+		target_link_libraries(Core PRIVATE PkgConfig::LIBUDEV)
     endif()
 endif()
 
@@ -168,13 +168,15 @@ endif()
 
 
 find_package(Boost REQUIRED COMPONENTS log log_setup thread filesystem system json)
+find_package(TBB REQUIRED)
+target_link_libraries(Core PRIVATE TBB::tbb)
 
 if (W_BUILD_DEPENDENCIES_WITH_CONAN)
     find_package(ffmpeg REQUIRED)
     target_link_libraries(Core PUBLIC ffmpeg::ffmpeg boost::boost)
 else()
     find_package(PkgConfig REQUIRED)
-    pkg_check_modules(libav REQUIRED IMPORTED_TARGET
+    pkg_check_modules(libav REQUIRED IMPORTED_TARGET GLOBAL
     libavdevice
     libavfilter
     libavformat
@@ -183,7 +185,8 @@ else()
     libswscale
     libavutil
     )
-    target_link_libraries(Core PUBLIC PkgConfig::libav ${Boost_LIBRARIES})
+    target_link_libraries(Core PUBLIC PkgConfig::libav
+        Boost::log Boost::log_setup Boost::thread Boost::filesystem Boost::system Boost::json)
 endif()
 
 
@@ -197,12 +200,14 @@ elseif(UNIX OR APPLE)
             target_link_libraries(Core PRIVATE libusb::libusb)
         else()
             find_package(PkgConfig REQUIRED)
-            pkg_check_modules(LIBUSB REQUIRED libusb-1.0)
-            target_link_libraries(Core PRIVATE ${LIBUSB_LIBRARIES})
+            pkg_check_modules(LIBUSB REQUIRED IMPORTED_TARGET GLOBAL libusb-1.0)
+            target_link_libraries(Core PRIVATE PkgConfig::LIBUSB)
         endif()
     endif()
 endif()
 
-target_include_directories(Core PUBLIC include)
+target_include_directories(Core PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
 
 add_library(ThermalCore::Core ALIAS Core)

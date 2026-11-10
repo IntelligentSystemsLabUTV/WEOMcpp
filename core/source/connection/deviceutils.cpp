@@ -32,6 +32,7 @@ std::pair<std::string, std::string> findVideoDeviceNameWithFormat(const std::str
         {
             if (std::string(reinterpret_cast<const char*>(cap.card), 32).find(serialNumber) != std::string::npos)
             {
+                close(fd);
                 return {devName, "v4l2"};
             }
         }
