@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>weomcpp</name>
+  <version>0.1.0</version>
+  <description>WEOM thermal camera SDK with ament CMake packaging.</description>
+  <maintainer email="info@dotxautomation.com">dotX Automation s.r.l.</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>boost</depend>
+  <!-- Boost.JSON development files must also be installed (libboost-json-dev
+       on Ubuntu); rosdep's boost key does not cover this component. -->
+  <depend>ffmpeg-dev</depend>
+  <depend>libusb</depend>
+  <depend>libudev-dev</depend>
+  <depend>libzip-dev</depend>
+  <depend>libssl-dev</depend>
+  <depend>tbb</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -1,5 +1,26 @@
 # Thermal Core SDK Example
 
+## ROS 2 / ament package
+
+This fork provides the `weomcpp` ament CMake package. Place the repository in
+a ROS 2 workspace's `src/WEOMcpp` directory and build it with:
+
+```bash
+colcon build --packages-select weomcpp
+```
+
+The package installs the SDK headers, static libraries, MIT license and CMake
+configuration. Consumers use `find_package(weomcpp REQUIRED)` and link
+`ThermalCore::Core` and `ThermalCore::WTC640`. Dependency targets are loaded
+automatically. C++20 requirements propagate through the exported targets.
+
+The default build uses system dependencies. Boost.JSON development files must
+be installed explicitly (`libboost-json-dev` on Ubuntu), in addition to the
+dependencies covered by the package manifest's rosdep keys.
+
+For a standalone CMake build without ROS, add `-DW_BUILD_WITH_AMENT=OFF` to the
+commands below.
+
 This project demonstrates the basic usage of the `thermal-core` SDK to connect to a thermal camera device, read properties, and handle a video stream in a multi-threaded environment.
 
 ## Features

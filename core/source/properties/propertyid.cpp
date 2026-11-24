@@ -6,9 +6,13 @@
 namespace core
 {
 
-std::vector<PropertyId> PropertyId::m_allPropertyIds {};
-std::vector<PropertyId::PropertyData> PropertyId::m_allPropertyData {};
-std::unordered_map<std::string, size_t> PropertyId::m_idStringToInternalId {};
+PropertyId::Registry& PropertyId::getRegistry()
+{
+    // Property IDs in other translation units register during static initialization.
+    // Construct their registry on first use, independently of linker object order.
+    static Registry registry;
+    return registry;
+}
 
 PropertyId::PropertyId(size_t internalId) : m_internalId(internalId)
 {
@@ -21,11 +25,12 @@ size_t PropertyId::getInternalId() const
 
 const PropertyId::PropertyData& PropertyId::getPropertyData() const
 {
-    assert(m_internalId < m_allPropertyIds.size());
-    assert(m_internalId < m_allPropertyData.size());
-    assert(m_internalId == m_allPropertyIds[m_internalId].m_internalId);
+    auto& registry = getRegistry();
+    assert(m_internalId < registry.allPropertyIds.size());
+    assert(m_internalId < registry.allPropertyData.size());
+    assert(m_internalId == registry.allPropertyIds[m_internalId].m_internalId);
 
-    return m_allPropertyData[m_internalId];
+    return registry.allPropertyData[m_internalId];
 }
 
 const std::string& PropertyId::getIdString() const
@@ -47,28 +52,30 @@ PropertyId PropertyId::createPropertyId(const std::string& idString,
                                         const std::string& info,
                                         const Version& version)
 {
+    auto& registry = getRegistry();
     assert(!idString.empty());
-    assert(m_allPropertyData.size() == m_allPropertyIds.size());
+    assert(registry.allPropertyData.size() == registry.allPropertyIds.size());
 
-    const auto internalId = m_allPropertyIds.size();
+    const auto internalId = registry.allPropertyIds.size();
     const PropertyId propertyId(internalId);
 
-    assert(!std::binary_search(m_allPropertyIds.begin(), m_allPropertyIds.end(), propertyId));
-    assert(m_idStringToInternalId.find(idString) == m_idStringToInternalId.end() && "id string duplicity!");
+    assert(!std::binary_search(registry.allPropertyIds.begin(), registry.allPropertyIds.end(), propertyId));
+    assert(registry.idStringToInternalId.find(idString) == registry.idStringToInternalId.end() && "id string duplicity!");
 
-    m_allPropertyIds.push_back(propertyId);
-    m_allPropertyData.emplace_back(idString, info, version);
+    registry.allPropertyIds.push_back(propertyId);
+    registry.allPropertyData.emplace_back(idString, info, version);
 
-    m_idStringToInternalId.emplace(idString, internalId);
+    registry.idStringToInternalId.emplace(idString, internalId);
 
     return propertyId;
 }
 
 std::optional<PropertyId> PropertyId::getPropertyIdByInternalId(size_t internalId)
 {
-    if (internalId < m_allPropertyIds.size())
+    auto& registry = getRegistry();
+    if (internalId < registry.allPropertyIds.size())
     {
-        auto propertyId = m_allPropertyIds[internalId];
+        auto propertyId = registry.allPropertyIds[internalId];
         assert(propertyId.m_internalId == internalId);
         return propertyId;
     }
@@ -77,8 +84,9 @@ std::optional<PropertyId> PropertyId::getPropertyIdByInternalId(size_t internalI
 
 std::optional<PropertyId> PropertyId::getPropertyIdByIdString(const std::string& idString)
 {
-    const auto it = m_idStringToInternalId.find(idString);
-    if (it != m_idStringToInternalId.end())
+    auto& registry = getRegistry();
+    const auto it = registry.idStringToInternalId.find(idString);
+    if (it != registry.idStringToInternalId.end())
     {
         return getPropertyIdByInternalId(it->second);
     }
@@ -87,7 +95,8 @@ std::optional<PropertyId> PropertyId::getPropertyIdByIdString(const std::string&
 
 const std::vector<PropertyId>& PropertyId::getAllPropertyIds()
 {
-    return m_allPropertyIds;
+    auto& registry = getRegistry();
+    return registry.allPropertyIds;
 }
 
 } // namespace core

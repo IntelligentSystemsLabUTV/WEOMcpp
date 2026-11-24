@@ -46,6 +46,8 @@ VoidResult AsioDataLinkWithBaudrateAndStreamSource::read(std::span<uint8_t> buff
         if (timedOut)
         {
             WW_LOG_CONNECTION_WARNING << "read timed out";
+            restOfBuffer = restOfBuffer.subspan(transferedSize);
+            break;
         }
 
         if (errorCode.failed())
@@ -90,6 +92,8 @@ VoidResult AsioDataLinkWithBaudrateAndStreamSource::write(std::span<const uint8_
         if (timedOut)
         {
             WW_LOG_CONNECTION_WARNING << "write timed out";
+            restOfBuffer = restOfBuffer.subspan(transferedSize);
+            break;
         }
 
         if (errorCode.failed())

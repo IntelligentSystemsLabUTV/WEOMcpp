@@ -22,6 +22,7 @@ extern "C" {
 }
 
 #include <memory>
+#include <thread>
 
 namespace core
 {
@@ -119,6 +120,11 @@ DataLinkUart::UartStream::~UartStream()
 VoidResult DataLinkUart::UartStream::startStream(ImageData::Type dataType)
 {
     std::lock_guard<std::mutex> lock(m_streamMutex);
+    if (m_stopRequested.load())
+    {
+        return VoidResult::createError("Stream start cancelled");
+    }
+    setDeadline(m_openTimeout);
     static constexpr std::string_view OPEN_INPUT_ERROR = "Failed to open input device!";
     static constexpr std::string_view FIND_STREAM_INFO_ERROR = "Failed to retrieve input stream info!";
 
@@ -151,9 +157,19 @@ VoidResult DataLinkUart::UartStream::startStream(ImageData::Type dataType)
     av_dict_set(&avDictionaryOptions, "thread_queue_size", "128", 0);
 
     auto* inputFormat = av_find_input_format(m_inputFormat.c_str());
-    if (const auto result = avformat_open_input(&m_inputContext, m_deviceName.c_str(), inputFormat, &avDictionaryOptions); result < 0)
+    m_inputContext = avformat_alloc_context();
+    if (!m_inputContext)
     {
-        return VoidResult::createError(OPEN_INPUT_ERROR.data(), utils::format("avformat_open_input return is {}", result));
+        av_dict_free(&avDictionaryOptions);
+        return VoidResult::createError("Failed to allocate input context");
+    }
+    m_inputContext->flags |= AVFMT_FLAG_NONBLOCK;
+    m_inputContext->interrupt_callback = {interruptCallback, this};
+    const auto openResult = avformat_open_input(&m_inputContext, m_deviceName.c_str(), inputFormat, &avDictionaryOptions);
+    av_dict_free(&avDictionaryOptions);
+    if (openResult < 0)
+    {
+        return VoidResult::createError(OPEN_INPUT_ERROR.data(), utils::format("avformat_open_input return is {}", openResult));
     }
 
     if (const auto result = avformat_find_stream_info(m_inputContext, nullptr); result < 0)
@@ -173,19 +189,73 @@ VoidResult DataLinkUart::UartStream::startStream(ImageData::Type dataType)
             return VoidResult::createError("Failed to open codec", utils::format("avcodec_open2 return is {}", result));
         }
     }
+    m_deadlineMs.store(0);
     return VoidResult::createOk();
 }
 
 VoidResult DataLinkUart::UartStream::stopStream()
 {
+    requestStop();
     std::lock_guard<std::mutex> lock(m_streamMutex);
 
     avformat_close_input(&m_inputContext);
     avcodec_free_context(&m_codecContext);
     m_codecContext = nullptr;
+    sws_freeContext(m_convertContext);
     m_convertContext = nullptr;
+    m_stopRequested.store(false);
+    m_deadlineMs.store(0);
 
     return VoidResult::createOk();
+}
+
+void DataLinkUart::UartStream::setTimeouts(std::chrono::milliseconds openTimeout, std::chrono::milliseconds readTimeout)
+{
+    m_openTimeout = openTimeout;
+    m_readTimeout = readTimeout;
+}
+
+void DataLinkUart::UartStream::requestStop()
+{
+    m_stopRequested.store(true);
+}
+
+void DataLinkUart::UartStream::setDeadline(std::chrono::milliseconds timeout)
+{
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    m_deadlineMs.store(std::chrono::duration_cast<std::chrono::milliseconds>(deadline.time_since_epoch()).count());
+}
+
+int DataLinkUart::UartStream::interruptCallback(void* opaque)
+{
+    const auto* stream = static_cast<const UartStream*>(opaque);
+    const auto deadline = stream->m_deadlineMs.load();
+    const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    return stream->m_stopRequested.load() || (deadline != 0 && now >= deadline);
+}
+
+int DataLinkUart::UartStream::readPacket(AVPacket* packet)
+{
+    setDeadline(m_readTimeout);
+    while (!interruptCallback(this))
+    {
+        const auto result = av_read_frame(m_inputContext, packet);
+        if (result == 0 && (packet->size <= 0 || !packet->data || (packet->flags & AV_PKT_FLAG_CORRUPT)))
+        {
+            // UVC can deliver incomplete frames during startup or USB errors.
+            // Keep the original deadline while waiting for a complete frame.
+            av_packet_unref(packet);
+            continue;
+        }
+        if (result != AVERROR(EAGAIN) && result != AVERROR(EINTR))
+        {
+            m_deadlineMs.store(0);
+            return result;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return AVERROR_EXIT;
 }
 
 bool DataLinkUart::UartStream::isRunning() const
@@ -282,7 +352,7 @@ private:
 
 VoidResult DataLinkUart::UartStream::getFrameData(std::vector<uint8_t>& data)
 {
-    AVPacket packet;
+    AVPacket packet{};
     {
         std::lock_guard<std::mutex> lock(m_streamMutex);
         if (!isRunning())
@@ -290,7 +360,7 @@ VoidResult DataLinkUart::UartStream::getFrameData(std::vector<uint8_t>& data)
             return VoidResult::createError("Stream is not running!");
         }
 
-        if (int result = av_read_frame(m_inputContext, &packet); result < 0)
+        if (int result = readPacket(&packet); result < 0)
         {
             return VoidResult::createError("Failed frame acquisition!", utils::format("av_read_frame return is {}", result));
         }
@@ -323,10 +393,15 @@ VoidResult DataLinkUart::UartStream::getRgbFrameData(std::vector<uint8_t>& data)
 
     av_image_fill_arrays(frameRGB->data, frameRGB->linesize, data.data(), AV_PIX_FMT_RGB24, frameRGB->width, frameRGB->height, 1);
 
-    auto packet = RaiiObject{av_packet_unref};
-    if (int result = av_read_frame(m_inputContext, packet.ptr()); result != 0)
+    auto packet = RaiiObject{AVPacket{}, av_packet_unref};
+    if (int result = readPacket(packet.ptr()); result != 0)
     {
         return VoidResult::createError("Failed frame acquisition!", utils::format("av_read_frame return is {}", result));
+    }
+
+    if (packet->size <= 0 || !packet->data || (packet->flags & AV_PKT_FLAG_CORRUPT))
+    {
+        return VoidResult::createError("Invalid video packet", "Empty or corrupt USB video frame");
     }
 
     if (auto result = avcodec_send_packet(m_codecContext, packet.ptr()); result != 0)
@@ -468,8 +543,8 @@ bool DataLinkUart::doAsync(std::chrono::steady_clock::duration timeout,
                              size_t& transferedSize)
 {
     bool timedOut = false;
-    boost::asio::deadline_timer timer(m_ioContext);
-    boost::asio::deadline_timer closeTimer(m_ioContext);
+    boost::asio::steady_timer timer(m_ioContext);
+    boost::asio::steady_timer closeTimer(m_ioContext);
 
     doAsyncImpl(*m_serialPort, buffer,
                 [&timer, &closeTimer, &errorCode, &transferedSize](const boost::system::error_code& resultError, size_t result_n)
@@ -483,17 +558,17 @@ bool DataLinkUart::doAsync(std::chrono::steady_clock::duration timeout,
                     {
                         WW_LOG_CONNECTION_WARNING << "Error on timer cancellation: " << cancelError.message();
                     }
-                    if (resultError == boost::asio::error::operation_aborted)
-                    {
-                        return;
-                    }
                     errorCode = resultError;
                     transferedSize = result_n;
                 });
 
-    timer.expires_from_now(boost::posix_time::milliseconds(std::chrono::duration_cast<std::chrono::milliseconds>(timeout).count()));
+    timer.expires_after(timeout);
     timer.async_wait([this, &timedOut](const boost::system::error_code& resultError)
                      {
+                         if (resultError == boost::asio::error::operation_aborted)
+                         {
+                             return;
+                         }
                          boost::system::error_code cancelError;
                          m_serialPort->cancel(cancelError);
                          if (cancelError.failed())
@@ -508,7 +583,8 @@ bool DataLinkUart::doAsync(std::chrono::steady_clock::duration timeout,
                          }
                      });
 
-    closeTimer.expires_from_now(boost::posix_time::milliseconds(std::max<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(timeout).count() * 2, CLOSE_SERIAL_PORT_MIN_TIMEOUT)));
+    closeTimer.expires_after(std::max(timeout * 2,
+        std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::milliseconds(CLOSE_SERIAL_PORT_MIN_TIMEOUT))));
     closeTimer.async_wait([this, &timedOut](const boost::system::error_code& resultError)
                           {
                               if (resultError != boost::asio::error::operation_aborted)

@@ -7,12 +7,14 @@
 
 #include <memory>
 #include <chrono>
+#include <atomic>
 
 struct AVFormatContext;
 struct AVInputFormat;
 struct AVCodecContext;
 struct AVCodec;
 struct SwsContext;
+struct AVPacket;
 
 namespace core
 {
@@ -46,6 +48,8 @@ private:
         [[nodiscard]] virtual VoidResult stopStream() override;
         [[nodiscard]] virtual bool isRunning() const override;
         [[nodiscard]] virtual VoidResult readImageData(ImageData& imageData) override;
+        void setTimeouts(std::chrono::milliseconds openTimeout, std::chrono::milliseconds readTimeout) override;
+        void requestStop() override;
 
         [[nodiscard]] static ValueResult<std::shared_ptr<UartStream>> createStream(const std::string& deviceName, const std::string inputFormat);
         static constexpr uint16_t WIDTH_INPUT_STREAM = 640;
@@ -54,6 +58,9 @@ private:
     private:
         [[nodiscard]] VoidResult getFrameData(std::vector<uint8_t>& data);
         [[nodiscard]] VoidResult getRgbFrameData(std::vector<uint8_t>& data);
+        int readPacket(AVPacket* packet);
+        void setDeadline(std::chrono::milliseconds timeout);
+        static int interruptCallback(void* opaque);
 
         std::string m_deviceName;
         std::string m_inputFormat;
@@ -62,6 +69,10 @@ private:
         AVCodecContext* m_codecContext{nullptr};
         SwsContext* m_convertContext{nullptr};
         ImageData::Type m_dataType;
+        std::atomic<bool> m_stopRequested{false};
+        std::atomic<int64_t> m_deadlineMs{0};
+        std::chrono::milliseconds m_openTimeout{3000};
+        std::chrono::milliseconds m_readTimeout{1000};
     };
 
     void closeConnectionImpl() override;
